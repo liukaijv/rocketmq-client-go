@@ -1,0 +1,15 @@
+
+message LoginRequest {
+    required string username = 1;
+    required string password = 2;
+}
+
+message RegisterServerRequest{
+    required int32      id      =1;
+    required string     type    =2;
+    required string     key     =3;
+    required string     name    =4;
+    required int32      port    =5;
+    required string     ip      =6;
+    optional int32      onLine  =7;
+}

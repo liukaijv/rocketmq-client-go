@@ -17,7 +17,7 @@
 package rocketmq
 
 /*
-#cgo LDFLAGS: -L/usr/local/lib/ -lrocketmq
+#cgo LDFLAGS: -L/usr/local/lib -lrocketmq
 #include <rocketmq/CMessage.h>
 #include <rocketmq/CMessageExt.h>
 #include <stdlib.h>
@@ -25,21 +25,33 @@ package rocketmq
 import "C"
 import (
 	"fmt"
+	"strconv"
 	"unsafe"
 )
 
+const bodyLenKey = "_bodyLen"
+
 type Message struct {
-	Topic          string
-	Tags           string
-	Keys           string
-	Body           string
+	Topic string
+	Tags  string
+	Keys  string
+	//Body  string
+	Body           []byte
 	DelayTimeLevel int
-	Property       map[string]string
+	//Property       map[string]string
+	property map[string]string
 }
 
 func (msg *Message) String() string {
 	return fmt.Sprintf("[Topic: %s, Tags: %s, Keys: %s, Body: %s, DelayTimeLevel: %d, Property: %v]",
-		msg.Topic, msg.Tags, msg.Keys, msg.Body, msg.DelayTimeLevel, msg.Property)
+		msg.Topic, msg.Tags, msg.Keys, msg.Body, msg.DelayTimeLevel, msg.property)
+}
+
+func (msg *Message) SetProperty(key, value string) {
+	if msg.property == nil {
+		msg.property = make(map[string]string)
+	}
+	msg.property[key] = value
 }
 
 func goMsgToC(gomsg *Message) *C.struct_CMessage {
@@ -55,13 +67,19 @@ func goMsgToC(gomsg *Message) *C.struct_CMessage {
 	C.SetMessageKeys(cmsg, cs)
 	C.free(unsafe.Pointer(cs))
 
-	cs = C.CString(gomsg.Body)
-	C.SetMessageBody(cmsg, cs)
-	C.free(unsafe.Pointer(cs))
+	//cs = C.CString(gomsg.Body)
+	//C.SetMessageBody(cmsg, cs)
+	//C.free(unsafe.Pointer(cs))
+
+	bodyLen := len(gomsg.Body)
+	cChar := (*C.char)(unsafe.Pointer(&gomsg.Body[0]))
+	C.SetByteMessageBody(cmsg, cChar, C.int(bodyLen))
+	gomsg.SetProperty(bodyLenKey, fmt.Sprintf("%d", len(gomsg.Body)))
 
 	C.SetDelayTimeLevel(cmsg, C.int(gomsg.DelayTimeLevel))
 
-	for k, v := range gomsg.Property {
+	//for k, v := range gomsg.Property {
+	for k, v := range gomsg.property {
 		key := C.CString(k)
 		value := C.CString(v)
 		C.SetMessageProperty(cmsg, key, value)
@@ -104,7 +122,12 @@ func cmsgExtToGo(cmsg *C.struct_CMessageExt) *MessageExt {
 	gomsg.Topic = C.GoString(C.GetMessageTopic(cmsg))
 	gomsg.Tags = C.GoString(C.GetMessageTags(cmsg))
 	gomsg.Keys = C.GoString(C.GetMessageKeys(cmsg))
-	gomsg.Body = C.GoString(C.GetMessageBody(cmsg))
+	//gomsg.Body = C.GoString(C.GetMessageBody(cmsg))
+	bodyLen, err := strconv.Atoi(gomsg.GetProperty(bodyLenKey))
+	if err != nil {
+		panic(fmt.Sprintf("GetProperty: bodyLenKey=>%s not find", bodyLenKey))
+	}
+	gomsg.Body = goBytes(C.GetMessageBody(cmsg), bodyLen)
 	gomsg.MessageID = C.GoString(C.GetMessageId(cmsg))
 	gomsg.DelayTimeLevel = int(C.GetMessageDelayTimeLevel(cmsg))
 	gomsg.QueueId = int(C.GetMessageQueueId(cmsg))
@@ -117,4 +140,8 @@ func cmsgExtToGo(cmsg *C.struct_CMessageExt) *MessageExt {
 	gomsg.PreparedTransactionOffset = int64(C.GetMessagePreparedTransactionOffset(cmsg))
 
 	return gomsg
+}
+
+func goBytes(chars *C.char, length int) []byte {
+	return C.GoBytes(unsafe.Pointer(chars), C.int(length))
 }
